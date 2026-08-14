@@ -2,6 +2,7 @@ importScripts('md5.js');
 
 const SECRET = 'XGRlBW9FXlekgbPrRHuSiA';
 const captured = new Map();
+let stopFlag = false;
 const logBuf = [];
 const MAX_LOG = 2000;
 let sentIdx = 0;
@@ -67,6 +68,7 @@ async function fetchToDataUrl(url, headers, keyHex, codec, tag, onProgress) {
   const chunks = [];
   let received = 0;
   for (;;) {
+    if (stopFlag) throw new Error('stopped');
     const { done, value } = await reader.read();
     if (done) break;
     chunks.push(value);
@@ -121,6 +123,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     saveLogToFile('[save-log] called from page');
     return;
   }
+  if (msg.type === 'get-capture') {
+    const c = msg.trackId ? captured.get(String(msg.trackId)) : null;
+    sendResponse({ captured: !!(c && (c.src || c.url)) });
+    return false;
+  }
+  if (msg.type === 'stop') {
+    stopFlag = true;
+    log('stop requested');
+    return false;
+  }
   if (msg.type === 'download') {
     const tabId = sender.tab && sender.tab.id;
     const prog = (p) => {
@@ -129,6 +141,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         chrome.tabs.sendMessage(tabId, Object.assign({ type: 'dl-progress' }, p)).catch(() => {});
       } catch (e) {}
     };
+    stopFlag = false;
     log('download msg', 'trackId=' + msg.trackId, 'albumId=' + msg.albumId, 'origin=' + msg.origin, 'title=' + msg.title);
     handleDownload(msg)
       .then((res) => {
@@ -145,6 +158,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (res.fetchFirst) {
           fetchToDataUrl(res.url, res.headers || {}, res.key || null, res.codec, 'stream', prog)
             .then((dataUrl) => {
+              if (stopFlag) {
+                log('download aborted by user');
+                sendResponse({ ok: false, error: 'stopped' });
+                return;
+              }
               log('dataUrl ready', 'len=' + dataUrl.length);
               prog({ phase: 'download' });
               chrome.downloads.download(
@@ -166,6 +184,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               sendResponse({ ok: false, error: (err && err.message) || String(err) });
             });
         } else {
+          if (stopFlag) {
+            log('download aborted by user');
+            sendResponse({ ok: false, error: 'stopped' });
+            return;
+          }
           prog({ phase: 'download' });
           chrome.downloads.download(
             { url: res.url, filename: 'YandexMusic/' + filename, conflictAction: 'uniquify' },
