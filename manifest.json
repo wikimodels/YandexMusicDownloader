@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Yandex Music Downloader",
+  "version": "0.8.0",
+  "description": "Adds an AAC download button to Yandex Music",
+  "permissions": ["downloads"],
+  "host_permissions": [
+    "https://music.yandex.ru/*",
+    "https://*.music.yandex.ru/*",
+    "https://music.yandex.com/*",
+    "https://*.music.yandex.com/*",
+    "https://*.yandex.net/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://music.yandex.ru/*", "https://music.yandex.com/*"],
+      "js": ["inject-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://music.yandex.ru/*", "https://music.yandex.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
