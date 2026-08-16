@@ -49,16 +49,23 @@
         const blob = new Blob([msg.data], { type: msg.mime || 'audio/mp4' });
         const u = URL.createObjectURL(blob);
         setTimeout(() => URL.revokeObjectURL(u), 6 * 60 * 1000);
-        ylog('blob url created', u.slice(0, 30), 'bytes=' + blob.size);
-        sendResponse({ ok: true, blobUrl: u });
+        ylog('dl-blob: creating download', 'bytes=' + blob.size);
+        chrome.downloads.download(
+          { url: u, filename: msg.filename, conflictAction: 'uniquify' },
+          (downloadId) => {
+            if (chrome.runtime.lastError) {
+              ylog('dl-blob download ERROR', chrome.runtime.lastError.message);
+              sendResponse({ ok: false, error: chrome.runtime.lastError.message });
+            } else {
+              ylog('dl-blob download started', 'id=' + downloadId, 'filename=' + msg.filename);
+              sendResponse({ ok: true, id: downloadId, filename: msg.filename });
+            }
+          }
+        );
       } catch (e) {
         sendResponse({ ok: false, error: e.message || String(e) });
       }
       return true;
-    }
-    if (msg.type === 'dl-blob-revoke') {
-      try { URL.revokeObjectURL(msg.url); } catch (e) {}
-      return false;
     }
   });
 
