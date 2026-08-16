@@ -43,15 +43,6 @@ function hexToBytes(hex) {
   return out;
 }
 
-function bytesToBase64(bytes) {
-  let binary = '';
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
 function mimeForCodec(codec) {
   const c = String(codec || '').toLowerCase();
   if (c === 'mp3') return 'audio/mpeg';
@@ -59,7 +50,7 @@ function mimeForCodec(codec) {
   return 'audio/mp4';
 }
 
-async function fetchToDataUrl(url, headers, keyHex, codec, tag, onProgress) {
+async function fetchToBlob(url, headers, keyHex, codec, tag, onProgress) {
   const r = await fetch(url, { credentials: 'include', headers });
   log('fetch[' + tag + ']', r.status, url.slice(0, 110));
   if (!r.ok) throw new Error('HTTP ' + r.status + ' (' + url.slice(0, 120) + ')');
@@ -85,7 +76,7 @@ async function fetchToDataUrl(url, headers, keyHex, codec, tag, onProgress) {
     log('decrypted', 'bytes=' + buf.byteLength);
   }
   if (onProgress) onProgress({ phase: 'encode' });
-  return 'data:' + mimeForCodec(codec) + ';base64,' + bytesToBase64(buf);
+  return new Blob([buf], { type: mimeForCodec(codec) });
 }
 
 function concatUint8(chunks, total) {
@@ -97,6 +88,18 @@ function concatUint8(chunks, total) {
   }
   return out;
 }
+
+const pendingBlobs = new Map();
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
+    const u = pendingBlobs.get(delta.id);
+    if (u) {
+      URL.revokeObjectURL(u);
+      pendingBlobs.delete(delta.id);
+      log('blob url revoked', 'id=' + delta.id);
+    }
+  }
+});
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
@@ -156,23 +159,26 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         saveLogToFile('[auto-save] download resolved');
         prog({ phase: 'meta', codec: res.codec });
         if (res.fetchFirst) {
-          fetchToDataUrl(res.url, res.headers || {}, res.key || null, res.codec, 'stream', prog)
-            .then((dataUrl) => {
+          fetchToBlob(res.url, res.headers || {}, res.key || null, res.codec, 'stream', prog)
+            .then((blob) => {
               if (stopFlag) {
                 log('download aborted by user');
                 sendResponse({ ok: false, error: 'stopped' });
                 return;
               }
-              log('dataUrl ready', 'len=' + dataUrl.length);
+              const blobUrl = URL.createObjectURL(blob);
+              log('blob ready', 'bytes=' + blob.size);
               prog({ phase: 'download' });
               chrome.downloads.download(
-                { url: dataUrl, filename: 'YandexMusic/' + filename, conflictAction: 'uniquify' },
+                { url: blobUrl, filename: 'YandexMusic/' + filename, conflictAction: 'uniquify' },
                 (downloadId) => {
                   if (chrome.runtime.lastError) {
                     log('downloads.download ERROR', chrome.runtime.lastError.message);
+                    URL.revokeObjectURL(blobUrl);
                     sendResponse({ ok: false, error: chrome.runtime.lastError.message });
                   } else {
                     log('download started', 'id=' + downloadId, 'filename=' + filename);
+                    pendingBlobs.set(downloadId, blobUrl);
                     prog({ phase: 'done', filename });
                     sendResponse({ ok: true, id: downloadId, filename });
                   }

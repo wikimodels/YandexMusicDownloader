@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Yandex Music Downloader",
-  "version": "0.8.0",
+  "version": "0.9.1",
   "description": "Adds an AAC download button to Yandex Music",
   "permissions": ["downloads"],
   "host_permissions": [
