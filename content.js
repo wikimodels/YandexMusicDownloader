@@ -46,22 +46,9 @@
     if (!msg) return;
     if (msg.type === 'dl-blob') {
       try {
-        const blob = new Blob([msg.data], { type: msg.mime || 'audio/mp4' });
-        const u = URL.createObjectURL(blob);
-        setTimeout(() => URL.revokeObjectURL(u), 6 * 60 * 1000);
-        ylog('dl-blob: creating download', 'bytes=' + blob.size);
-        chrome.downloads.download(
-          { url: u, filename: msg.filename, conflictAction: 'uniquify' },
-          (downloadId) => {
-            if (chrome.runtime.lastError) {
-              ylog('dl-blob download ERROR', chrome.runtime.lastError.message);
-              sendResponse({ ok: false, error: chrome.runtime.lastError.message });
-            } else {
-              ylog('dl-blob download started', 'id=' + downloadId, 'filename=' + msg.filename);
-              sendResponse({ ok: true, id: downloadId, filename: msg.filename });
-            }
-          }
-        );
+        ylog('dl-blob: relaying to page world', 'bytes=' + String(msg.data && msg.data.byteLength), msg.filename);
+        window.postMessage({ source: 'YMD_DL', data: msg.data, mime: msg.mime || 'audio/mp4', filename: msg.filename }, '*');
+        sendResponse({ ok: true, filename: msg.filename });
       } catch (e) {
         sendResponse({ ok: false, error: e.message || String(e) });
       }

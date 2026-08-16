@@ -175,7 +175,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               const pageBuf = await blob.arrayBuffer();
               log('fetch done', 'bytes=' + pageBuf.byteLength);
               prog({ phase: 'download' });
-              const res2 = await pageDownloadBlob(tabId, pageBuf, mime, 'YandexMusic/' + filename);
+              const res2 = await pageDownloadBlob(tabId, pageBuf, mime, filename);
               if (!res2) {
                 sendResponse({ ok: false, error: 'failed to start download in page' });
                 return;

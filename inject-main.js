@@ -21,6 +21,27 @@
     } catch (e) {}
   }
 
+  window.addEventListener('message', (e) => {
+    if (e.source !== window) return;
+    const d = e.data;
+    if (!d || d.source !== 'YMD_DL' || !d.data) return;
+    try {
+      const blob = new Blob([d.data], { type: d.mime || 'audio/mp4' });
+      const u = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = u;
+      a.download = d.filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      console.log('[YMD] dl started via anchor', d.filename, String(blob.size));
+      setTimeout(() => URL.revokeObjectURL(u), 6 * 60 * 1000);
+    } catch (err) {
+      console.log('[YMD] dl error', String(err));
+    }
+  });
+
   function pickHeaders(init) {
     try {
       if (!init) return null;
