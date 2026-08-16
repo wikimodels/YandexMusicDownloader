@@ -92,14 +92,33 @@ function concatUint8(chunks, total) {
 const pendingBlobs = new Map();
 chrome.downloads.onChanged.addListener((delta) => {
   if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
-    const u = pendingBlobs.get(delta.id);
-    if (u) {
-      URL.revokeObjectURL(u);
+    const info = pendingBlobs.get(delta.id);
+    if (info) {
       pendingBlobs.delete(delta.id);
+      try {
+        chrome.tabs.sendMessage(info.tabId, { type: 'dl-blob-revoke', url: info.url }).catch(() => {});
+      } catch (e) {}
       log('blob url revoked', 'id=' + delta.id);
     }
   }
 });
+
+function pageCreateBlobUrl(tabId, buffer, mime) {
+  return new Promise((resolve) => {
+    if (tabId == null) return resolve(null);
+    try {
+      chrome.tabs.sendMessage(tabId, { type: 'dl-blob', data: buffer, mime }, (r) => {
+        if (chrome.runtime.lastError || !r || !r.ok) {
+          log('page blob URL FAILED', chrome.runtime.lastError ? chrome.runtime.lastError.message : (r && r.error) || 'no reply');
+          return resolve(null);
+        }
+        resolve(r.blobUrl);
+      });
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
@@ -160,25 +179,34 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         prog({ phase: 'meta', codec: res.codec });
         if (res.fetchFirst) {
           fetchToBlob(res.url, res.headers || {}, res.key || null, res.codec, 'stream', prog)
-            .then((blob) => {
+            .then(async (blob) => {
               if (stopFlag) {
                 log('download aborted by user');
                 sendResponse({ ok: false, error: 'stopped' });
                 return;
               }
-              const blobUrl = URL.createObjectURL(blob);
-              log('blob ready', 'bytes=' + blob.size);
+              const mime = blob.type || 'audio/mp4';
+              const pageBuf = await blob.arrayBuffer();
+              log('fetch done', 'bytes=' + pageBuf.byteLength);
+              const blobUrl = await pageCreateBlobUrl(tabId, pageBuf, mime);
+              if (!blobUrl) {
+                sendResponse({ ok: false, error: 'failed to create blob in page' });
+                return;
+              }
+              log('blob url ready', blobUrl.slice(0, 40));
               prog({ phase: 'download' });
               chrome.downloads.download(
                 { url: blobUrl, filename: 'YandexMusic/' + filename, conflictAction: 'uniquify' },
                 (downloadId) => {
                   if (chrome.runtime.lastError) {
                     log('downloads.download ERROR', chrome.runtime.lastError.message);
-                    URL.revokeObjectURL(blobUrl);
+                    try {
+                      chrome.tabs.sendMessage(tabId, { type: 'dl-blob-revoke', url: blobUrl }).catch(() => {});
+                    } catch (e) {}
                     sendResponse({ ok: false, error: chrome.runtime.lastError.message });
                   } else {
                     log('download started', 'id=' + downloadId, 'filename=' + filename);
-                    pendingBlobs.set(downloadId, blobUrl);
+                    pendingBlobs.set(downloadId, { url: blobUrl, tabId });
                     prog({ phase: 'done', filename });
                     sendResponse({ ok: true, id: downloadId, filename });
                   }

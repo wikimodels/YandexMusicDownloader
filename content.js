@@ -42,6 +42,26 @@
     return false;
   });
 
+  chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg) return;
+    if (msg.type === 'dl-blob') {
+      try {
+        const blob = new Blob([msg.data], { type: msg.mime || 'audio/mp4' });
+        const u = URL.createObjectURL(blob);
+        setTimeout(() => URL.revokeObjectURL(u), 6 * 60 * 1000);
+        ylog('blob url created', u.slice(0, 30), 'bytes=' + blob.size);
+        sendResponse({ ok: true, blobUrl: u });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message || String(e) });
+      }
+      return true;
+    }
+    if (msg.type === 'dl-blob-revoke') {
+      try { URL.revokeObjectURL(msg.url); } catch (e) {}
+      return false;
+    }
+  });
+
   const style = document.createElement('style');
   style.id = 'ymd-style';
   style.textContent =
