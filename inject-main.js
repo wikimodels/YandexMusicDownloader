@@ -26,7 +26,8 @@
     const d = e.data;
     if (!d || d.source !== 'YMD_DL' || !d.data) return;
     try {
-      const blob = new Blob([d.data], { type: d.mime || 'audio/mp4' });
+      const bytes = Array.isArray(d.data) ? new Uint8Array(d.data) : d.data;
+      const blob = new Blob([bytes], { type: d.mime || 'audio/mp4' });
       const u = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = u;

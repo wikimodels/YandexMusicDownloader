@@ -46,7 +46,8 @@
     if (!msg) return;
     if (msg.type === 'dl-blob') {
       try {
-        ylog('dl-blob: relaying to page world', 'bytes=' + String(msg.data && msg.data.byteLength), msg.filename);
+        if (!Array.isArray(msg.data)) throw new Error('data is not an array (' + typeof msg.data + ')');
+        ylog('dl-blob: relaying to page world', 'bytes=' + msg.data.length, msg.filename);
         window.postMessage({ source: 'YMD_DL', data: msg.data, mime: msg.mime || 'audio/mp4', filename: msg.filename }, '*');
         sendResponse({ ok: true, filename: msg.filename });
       } catch (e) {
