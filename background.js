@@ -197,7 +197,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           prog({ phase: 'download' });
           chrome.downloads.download(
-            { url: res.url, filename: 'YandexMusic/' + filename, conflictAction: 'uniquify' },
+            { url: res.url, filename: 'AIMusicTools/YandexMusic/' + filename, conflictAction: 'uniquify' },
             (downloadId) => {
               if (chrome.runtime.lastError) {
                 log('downloads.download ERROR', chrome.runtime.lastError.message);
