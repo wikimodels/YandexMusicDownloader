@@ -106,6 +106,39 @@ function pageDownloadBlob(tabId, buffer, mime, filename) {
   });
 }
 
+let offscreenReady = null;
+
+function ensureOffscreen() {
+  if (!offscreenReady) {
+    offscreenReady = chrome.offscreen
+      .createDocument({
+        url: 'offscreen.html',
+        reasons: ['BLOBS'],
+        justification: 'Save downloaded audio blobs into the AIMusicTools/YandexMusic download folder',
+      })
+      .then(() => true)
+      .catch((e) => {
+        offscreenReady = null;
+        if (/already exists/i.test(String((e && e.message) || e))) return true;
+        throw e;
+      });
+  }
+  return offscreenReady;
+}
+
+function saveBlobViaOffscreen(blob, filename) {
+  return ensureOffscreen().then(
+    () =>
+      new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({ type: 'blob-save', blob: blob, filename: filename }, (r) => {
+          if (chrome.runtime.lastError) return reject(new Error('offscreen: ' + chrome.runtime.lastError.message));
+          if (r && r.ok) return resolve(r);
+          reject(new Error((r && r.error) || 'offscreen save failed'));
+        });
+      })
+  );
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
   if (msg.type === 'capture') {
@@ -172,11 +205,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 return;
               }
               const mime = blob.type || 'audio/mp4';
-              const pageBuf = await blob.arrayBuffer();
-              log('fetch done', 'bytes=' + pageBuf.byteLength);
+              log('fetch done', 'bytes=' + blob.size);
               prog({ phase: 'download' });
-              const bytes = Array.from(new Uint8Array(pageBuf));
-              const res2 = await pageDownloadBlob(tabId, bytes, mime, filename);
+              let res2 = null;
+              try {
+                res2 = await saveBlobViaOffscreen(blob, filename);
+              } catch (e) {
+                log('offscreen save FAILED', (e && e.message) || String(e), '-> page fallback');
+                const pageBuf = await blob.arrayBuffer();
+                const bytes = Array.from(new Uint8Array(pageBuf));
+                res2 = await pageDownloadBlob(tabId, bytes, mime, filename);
+              }
               if (!res2) {
                 sendResponse({ ok: false, error: 'failed to start download in page' });
                 return;
